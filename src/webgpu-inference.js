@@ -7,7 +7,7 @@ import { VLModel, clearModelCache, getCacheInfo, setDebug } from './vl-model.js'
 import { getModelConfig } from './config.js';
 
 // Expose debug toggle on window for browser console access
-window.setDebug = setDebug;
+if (typeof window !== 'undefined') window.setDebug = setDebug;
 
 // Re-export cache utilities
 export { clearModelCache, getCacheInfo, setDebug };

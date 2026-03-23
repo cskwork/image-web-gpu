@@ -12,6 +12,9 @@ import { AutoTokenizer, env } from '@huggingface/transformers';
 import { processImage, loadImage } from './vl-processor.js';
 import { EXTERNAL_DATA_FILE_COUNTS } from './config.js';
 
+// WASM 스레딩 비활성화 (worker에서 document 접근 오류 방지)
+ort.env.wasm.numThreads = 1;
+
 // Debug logging - set to false for production, toggle via setDebug(true) in console
 let DEBUG = false;
 export function setDebug(value) { DEBUG = value; console.log(`Debug logging ${value ? 'enabled' : 'disabled'}`); }
