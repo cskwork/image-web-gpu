@@ -11,6 +11,10 @@ import { classifyFocus, getFocusDisplayInfo, FocusStatus } from './focus-analyze
 // 상태
 // ========================================
 
+const IS_MOBILE_DEVICE =
+  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 0 && screen.width < 1024);
+
 let monitoring = false;
 let captureLoopRunning = false;
 
@@ -231,7 +235,11 @@ async function captureLoop() {
 async function analyzeFrame() {
   if (!monitoring) return;
 
-  const resolution = parseInt($('resolution-select').value, 10);
+  // 모바일: 메모리 절약을 위해 해상도/토큰 제한
+  const isMobile = IS_MOBILE_DEVICE;
+  const resolution = isMobile ? 256 : parseInt($('resolution-select').value, 10);
+  const maxTokens = isMobile ? 40 : 128;
+
   const dataURL = captureFrame(resolution);
   if (!dataURL) return;
 
@@ -243,7 +251,8 @@ async function analyzeFrame() {
   updateFocusOverlay('analyzing');
 
   try {
-    // 한국어 프롬프트로 분석 요청
+    // 영어 프롬프트 (짧고 효율적, 모든 모델에서 안정적)
+    // 응답은 focus-analyzer에서 한국어로 분류
     const messages = [
       {
         role: 'user',
@@ -251,10 +260,7 @@ async function analyzeFrame() {
           { type: 'image', value: dataURL },
           {
             type: 'text',
-            value:
-              '이 이미지에서 사람의 상태를 한국어로 짧게 설명하세요. ' +
-              '카메라나 화면을 보고 있는지, 다른 곳을 보고 있는지, ' +
-              '또는 자리에 없는지 판단하세요.',
+            value: 'Is the person looking at the camera or screen? Answer briefly: focused, distracted, or absent.',
           },
         ],
       },
@@ -263,7 +269,7 @@ async function analyzeFrame() {
     // 이미지 캐시 클리어 (매 프레임 새 이미지)
     clearImageCache();
 
-    const response = await generate(messages, { maxNewTokens: 128 });
+    const response = await generate(messages, { maxNewTokens: maxTokens });
 
     if (!monitoring) return;
 
@@ -386,14 +392,14 @@ function escapeHtml(text) {
 // ========================================
 
 function checkMobile() {
-  const isMobile =
-    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
-    (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+  if (!IS_MOBILE_DEVICE) return;
 
-  if (isMobile) {
-    const warning = $('mobile-warning');
-    if (warning) warning.classList.remove('hidden');
-  }
+  const warning = $('mobile-warning');
+  if (warning) warning.classList.remove('hidden');
+
+  // 모바일: 해상도 선택기 숨기고 256px 강제 (메모리 절약)
+  const resGroup = $('resolution-select')?.closest('.control-group');
+  if (resGroup) resGroup.style.display = 'none';
 }
 
 async function init() {

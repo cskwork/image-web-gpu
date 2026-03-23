@@ -43,15 +43,25 @@ export function classifyFocus(description) {
     return { status: FocusStatus.UNKNOWN, confidence: 0 };
   }
 
-  const text = description.toLowerCase();
+  const text = description.toLowerCase().trim();
 
-  // 부재 확인 (최우선)
+  // 1차: 모델이 단일 단어로 답한 경우 (영어 프롬프트 최적화)
+  if (/^focused\.?$/.test(text) || /^yes/.test(text)) {
+    return { status: FocusStatus.FOCUSED, confidence: 1 };
+  }
+  if (/^distracted\.?$/.test(text)) {
+    return { status: FocusStatus.DISTRACTED, confidence: 1 };
+  }
+  if (/^absent\.?$/.test(text) || /^no one/.test(text) || /^empty/.test(text)) {
+    return { status: FocusStatus.ABSENT, confidence: 1 };
+  }
+
+  // 2차: 키워드 스코어링
   const absentScore = countMatches(text, ABSENT_KEYWORDS);
   if (absentScore >= 1) {
     return { status: FocusStatus.ABSENT, confidence: Math.min(absentScore / 2, 1) };
   }
 
-  // 산만 확인
   const distractedScore = countMatches(text, DISTRACTED_KEYWORDS);
   const focusedScore = countMatches(text, FOCUSED_KEYWORDS);
 
