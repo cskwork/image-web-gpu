@@ -20,31 +20,86 @@ let DEBUG = false;
 export function setDebug(value) { DEBUG = value; console.log(`Debug logging ${value ? 'enabled' : 'disabled'}`); }
 const log = (...args) => { if (DEBUG) console.log(...args); };
 
-// Cache configuration
-const CACHE_NAME = 'onnx-models-v1';
+// IndexedDB 캐시 (Safari 호환 - Cache API는 Safari에서 대용량 파일 저장 실패)
+const DB_NAME = 'onnx-model-cache';
+const DB_VERSION = 1;
+const STORE_NAME = 'files';
 
-// Threshold for URL-based ONNX loading (files too large for JS memory)
-// Set to 2GB - files larger than this will stream instead of loading into memory
-const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024 * 1024; // 2GB
+const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024 * 1024;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbGet(key) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return null; }
+}
+
+async function idbPut(key, value) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.warn('[IDB WRITE ERROR]', e);
+  }
+}
+
+async function idbGetAllKeys() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).getAllKeys();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch { return []; }
+}
+
+async function idbClear() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).clear();
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch { return false; }
+}
 
 /**
- * Fetch with streaming progress tracking
- * @param {string} url - URL to fetch
- * @param {object} options - Fetch options
- * @param {function} onProgress - Progress callback (received, total) => void
- * @returns {Promise<Response>} - Response with complete body
+ * 스트리밍 다운로드 + 진행률 표시
  */
 async function fetchWithProgress(url, options = {}, onProgress) {
   const response = await fetch(url, options);
-  if (!response.ok) {
-    throw new Error(`Fetch failed: ${response.status}`);
-  }
+  if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
 
   const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-  if (!contentLength || !onProgress) {
-    // No size info or no callback - return as-is
-    return response;
-  }
+  if (!contentLength || !onProgress) return response;
 
   const reader = response.body.getReader();
   const chunks = [];
@@ -58,7 +113,6 @@ async function fetchWithProgress(url, options = {}, onProgress) {
     onProgress(received, contentLength);
   }
 
-  // Combine chunks into single buffer
   const buffer = new Uint8Array(received);
   let offset = 0;
   for (const chunk of chunks) {
@@ -66,8 +120,6 @@ async function fetchWithProgress(url, options = {}, onProgress) {
     offset += chunk.length;
   }
 
-  // Create new Response with fresh Headers for Cache API compatibility
-  // Using the original headers object from a consumed response can cause issues
   return new Response(new Blob([buffer]), {
     status: response.status,
     headers: new Headers(response.headers),
@@ -75,133 +127,86 @@ async function fetchWithProgress(url, options = {}, onProgress) {
 }
 
 /**
- * Fetch with caching support using Cache API
- * @param {string} url - URL to fetch
- * @param {object} options - Fetch options
- * @param {function} onProgress - Optional progress callback (received, total) => void
- * @returns {Promise<Response>} - Response (from cache or network)
+ * IndexedDB 캐시 기반 fetch (Safari/Chrome 모두 호환)
  */
 async function fetchWithCache(url, options = {}, onProgress = null) {
-  // Skip caching for local files
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     return fetch(url, options);
   }
 
   const fileName = url.split('/').pop();
 
-  // 1. Try cache read with validation
+  // 1. IndexedDB에서 캐시 확인
   try {
-    const cache = await caches.open(CACHE_NAME);
-    const cached = await cache.match(url);
-    if (cached) {
-      try {
-        const buffer = await cached.clone().arrayBuffer();
-        const expectedSize = parseInt(cached.headers.get('content-length') || '0', 10);
-
-        // 크기 검증: content-length와 실제 바이트 비교 (불완전 다운로드 감지)
-        if (expectedSize > 0 && buffer.byteLength < expectedSize) {
-          log(`[Cache INCOMPLETE] ${fileName}: ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB / ${(expectedSize / 1024 / 1024).toFixed(1)} MB expected - re-fetching`);
-          await cache.delete(url);
-        } else {
-          log(`[Cache HIT] ${fileName} (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB)`);
-          return new Response(buffer, {
-            status: cached.status,
-            statusText: cached.statusText,
-            headers: cached.headers,
-          });
-        }
-      } catch (bodyError) {
-        log(`[Cache CORRUPT] ${fileName} - deleting and re-fetching`);
-        await cache.delete(url);
+    const cached = await idbGet(url);
+    if (cached && cached.buffer) {
+      const expectedSize = cached.expectedSize || 0;
+      if (expectedSize > 0 && cached.buffer.byteLength < expectedSize) {
+        log(`[IDB INCOMPLETE] ${fileName}: ${(cached.buffer.byteLength / 1e6).toFixed(1)} / ${(expectedSize / 1e6).toFixed(1)} MB`);
+      } else {
+        log(`[IDB HIT] ${fileName} (${(cached.buffer.byteLength / 1e6).toFixed(1)} MB)`);
+        return new Response(cached.buffer, { status: 200 });
       }
     }
   } catch (e) {
-    log(`[Cache ERROR] ${e.message}`);
+    log(`[IDB READ ERROR] ${e.message}`);
   }
 
-  // 2. Fetch from network with progress tracking
-  log(`[Network] Fetching ${fileName}...`);
+  // 2. 네트워크에서 다운로드
+  log(`[Network] ${fileName}...`);
   const response = await fetchWithProgress(url, options, onProgress);
 
-  // 3. Try to cache successful response (fire-and-forget)
+  // 3. IndexedDB에 저장 (비동기, 실패해도 OK)
   if (response.ok) {
-    tryCacheResponse(url, response.clone());
+    try {
+      const clone = response.clone();
+      const arrayBuf = await clone.arrayBuffer();
+      const expectedSize = parseInt(response.headers.get('content-length') || '0', 10);
+      await idbPut(url, { buffer: arrayBuf, expectedSize, savedAt: Date.now() });
+      log(`[IDB SAVED] ${fileName} (${(arrayBuf.byteLength / 1e6).toFixed(1)} MB)`);
+    } catch (e) {
+      console.warn(`[IDB SAVE ERROR] ${fileName}:`, e.message);
+    }
   }
 
   return response;
 }
 
 /**
- * Try to cache a response (non-blocking, best-effort)
- * @param {string} url - URL to cache
- * @param {Response} response - Response to cache
- */
-async function tryCacheResponse(url, response) {
-  try {
-    // Check available space before caching
-    if (navigator.storage?.estimate) {
-      const { usage = 0, quota = 0 } = await navigator.storage.estimate();
-      const available = quota - usage;
-      const responseSize = parseInt(response.headers.get('content-length') || '0', 10);
-
-      // Skip if we don't have space for this file + 100MB buffer
-      const BUFFER = 100 * 1024 * 1024;
-      if (responseSize > 0 && available < responseSize + BUFFER) {
-        log(`[Cache SKIP] Not enough space (need ${((responseSize + BUFFER) / 1e9).toFixed(2)} GB, have ${(available / 1e9).toFixed(2)} GB)`);
-        return;
-      }
-    }
-
-    const cache = await caches.open(CACHE_NAME);
-    await cache.put(url, response);
-    log(`[Cached] ${url.split('/').pop()}`);
-  } catch (e) {
-    // Caching failed, but download succeeded - that's fine
-    console.warn(`[Cache WRITE ERROR] ${url.split('/').pop()}:`, e.name, e.message, e);
-  }
-}
-
-/**
- * Clear the model cache
- * @returns {Promise<boolean>} - True if cache was deleted
+ * 모델 캐시 삭제
  */
 export async function clearModelCache() {
-  const deleted = await caches.delete(CACHE_NAME);
-  log(deleted ? 'Model cache cleared' : 'No cache to clear');
-  return deleted;
+  // IndexedDB 삭제
+  const idbCleared = await idbClear();
+  // 기존 Cache API도 정리 (이전 버전 호환)
+  try { await caches.delete('onnx-models-v1'); } catch {}
+  log(idbCleared ? 'Model cache cleared' : 'No cache to clear');
+  return idbCleared;
 }
 
 /**
- * Get cache storage usage info (specifically for model cache)
- * @returns {Promise<{used: number, available: number}|null>}
+ * 캐시 사용량 조회
  */
 export async function getCacheInfo() {
   try {
-    // Calculate actual size of just the model cache
-    const cache = await caches.open(CACHE_NAME);
-    const keys = await cache.keys();
-
+    const db = await openDB();
+    const keys = await idbGetAllKeys();
     let totalSize = 0;
-    for (const request of keys) {
-      const response = await cache.match(request);
-      if (response) {
-        // Get the response body as blob to measure size
-        const blob = await response.clone().blob();
-        totalSize += blob.size;
+
+    for (const key of keys) {
+      const entry = await idbGet(key);
+      if (entry && entry.buffer) {
+        totalSize += entry.buffer.byteLength;
       }
     }
 
-    // Get quota info for available space
     let available = 0;
-    if ('storage' in navigator && 'estimate' in navigator.storage) {
-      const estimate = await navigator.storage.estimate();
-      available = estimate.quota || 0;
+    if (navigator.storage?.estimate) {
+      const est = await navigator.storage.estimate();
+      available = est.quota || 0;
     }
 
-    return {
-      used: totalSize,
-      available: available,
-    };
+    return { used: totalSize, available };
   } catch (e) {
     console.warn('Error getting cache info:', e);
     return null;
