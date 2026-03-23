@@ -94,18 +94,23 @@ async function fetchWithCache(url, options = {}, onProgress = null) {
     const cache = await caches.open(CACHE_NAME);
     const cached = await cache.match(url);
     if (cached) {
-      // Validate by reading body - catches corrupted entries from failed cache.put()
       try {
         const buffer = await cached.clone().arrayBuffer();
-        log(`[Cache HIT] ${fileName} (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB)`);
-        // Return a new Response with the validated buffer
-        return new Response(buffer, {
-          status: cached.status,
-          statusText: cached.statusText,
-          headers: cached.headers,
-        });
+        const expectedSize = parseInt(cached.headers.get('content-length') || '0', 10);
+
+        // 크기 검증: content-length와 실제 바이트 비교 (불완전 다운로드 감지)
+        if (expectedSize > 0 && buffer.byteLength < expectedSize) {
+          log(`[Cache INCOMPLETE] ${fileName}: ${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB / ${(expectedSize / 1024 / 1024).toFixed(1)} MB expected - re-fetching`);
+          await cache.delete(url);
+        } else {
+          log(`[Cache HIT] ${fileName} (${(buffer.byteLength / 1024 / 1024).toFixed(1)} MB)`);
+          return new Response(buffer, {
+            status: cached.status,
+            statusText: cached.statusText,
+            headers: cached.headers,
+          });
+        }
       } catch (bodyError) {
-        // Corrupted cache entry - delete it and re-fetch
         log(`[Cache CORRUPT] ${fileName} - deleting and re-fetching`);
         await cache.delete(url);
       }
