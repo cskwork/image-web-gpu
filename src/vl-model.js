@@ -92,42 +92,40 @@ async function idbClear() {
 }
 
 /**
- * 스트리밍 다운로드 + 진행률 표시
+ * 다운로드 -> ArrayBuffer 직접 반환 (메모리 최적화)
+ * chunks 배열 없이 사전 할당 버퍼에 바로 쓴다.
+ * 피크 메모리: contentLength 1배 (이전: 3-5배)
  */
-async function fetchWithProgress(url, options = {}, onProgress) {
+async function downloadAsBuffer(url, options = {}, onProgress) {
   const response = await fetch(url, options);
   if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
 
   const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-  if (!contentLength || !onProgress) return response;
 
+  // 진행률 불필요하거나 크기 모르면 한번에 읽기
+  if (!contentLength || !onProgress) {
+    return { buffer: await response.arrayBuffer(), contentLength };
+  }
+
+  // 사전 할당 버퍼에 직접 스트리밍 (chunk 배열 없이)
   const reader = response.body.getReader();
-  const chunks = [];
+  const buffer = new Uint8Array(contentLength);
   let received = 0;
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    chunks.push(value);
+    buffer.set(value, received);
     received += value.length;
     onProgress(received, contentLength);
   }
 
-  const buffer = new Uint8Array(received);
-  let offset = 0;
-  for (const chunk of chunks) {
-    buffer.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  return new Response(new Blob([buffer]), {
-    status: response.status,
-    headers: new Headers(response.headers),
-  });
+  return { buffer: buffer.buffer, contentLength };
 }
 
 /**
  * IndexedDB 캐시 기반 fetch (Safari/Chrome 모두 호환)
+ * 메모리 최적화: ArrayBuffer를 한 번만 할당, clone/copy 없음
  */
 async function fetchWithCache(url, options = {}, onProgress = null) {
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -136,7 +134,7 @@ async function fetchWithCache(url, options = {}, onProgress = null) {
 
   const fileName = url.split('/').pop();
 
-  // 1. IndexedDB에서 캐시 확인
+  // 1. IndexedDB 캐시 확인
   try {
     const cached = await idbGet(url);
     if (cached && cached.buffer) {
@@ -152,24 +150,17 @@ async function fetchWithCache(url, options = {}, onProgress = null) {
     log(`[IDB READ ERROR] ${e.message}`);
   }
 
-  // 2. 네트워크에서 다운로드
+  // 2. 다운로드 (단일 ArrayBuffer로 직접 수신)
   log(`[Network] ${fileName}...`);
-  const response = await fetchWithProgress(url, options, onProgress);
+  const { buffer, contentLength } = await downloadAsBuffer(url, options, onProgress);
 
-  // 3. IndexedDB에 저장 (비동기, 실패해도 OK)
-  if (response.ok) {
-    try {
-      const clone = response.clone();
-      const arrayBuf = await clone.arrayBuffer();
-      const expectedSize = parseInt(response.headers.get('content-length') || '0', 10);
-      await idbPut(url, { buffer: arrayBuf, expectedSize, savedAt: Date.now() });
-      log(`[IDB SAVED] ${fileName} (${(arrayBuf.byteLength / 1e6).toFixed(1)} MB)`);
-    } catch (e) {
-      console.warn(`[IDB SAVE ERROR] ${fileName}:`, e.message);
-    }
-  }
+  // 3. IDB 저장 (fire-and-forget, structured clone은 IDB 내부에서 처리)
+  idbPut(url, { buffer, expectedSize: contentLength, savedAt: Date.now() })
+    .then(() => log(`[IDB SAVED] ${fileName} (${(buffer.byteLength / 1e6).toFixed(1)} MB)`))
+    .catch((e) => log(`[IDB SAVE FAIL] ${fileName}: ${e.message}`));
 
-  return response;
+  // 4. Response 래핑 (buffer 참조만 전달, 복사 없음)
+  return new Response(buffer, { status: 200 });
 }
 
 /**
@@ -189,26 +180,26 @@ export async function clearModelCache() {
  */
 export async function getCacheInfo() {
   try {
-    const db = await openDB();
-    const keys = await idbGetAllKeys();
-    let totalSize = 0;
+    // navigator.storage.estimate로 전체 사용량 조회 (버퍼 로드 없이)
+    let used = 0;
+    let available = 0;
 
-    for (const key of keys) {
-      const entry = await idbGet(key);
-      if (entry && entry.buffer) {
-        totalSize += entry.buffer.byteLength;
+    if (navigator.storage?.estimate) {
+      const est = await navigator.storage.estimate();
+      used = est.usage || 0;
+      available = est.quota || 0;
+    } else {
+      // 폴백: IDB에서 expectedSize 합산 (버퍼 로드 없이)
+      const keys = await idbGetAllKeys();
+      for (const key of keys) {
+        const entry = await idbGet(key);
+        if (entry) used += entry.expectedSize || 0;
       }
     }
 
-    let available = 0;
-    if (navigator.storage?.estimate) {
-      const est = await navigator.storage.estimate();
-      available = est.quota || 0;
-    }
-
-    return { used: totalSize, available };
+    return { used, available };
   } catch (e) {
-    console.warn('Error getting cache info:', e);
+    log('Error getting cache info:', e);
     return null;
   }
 }
