@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 근무 집중도 모니터</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- 로딩 화면 -->
+    <div id="landing" class="landing">
+        <div class="landing-bg"></div>
+        <div class="landing-content">
+            <div class="landing-icon">
+                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+            </div>
+            <h1 class="landing-title">AI 근무 집중도 모니터</h1>
+            <p class="landing-desc">
+                AI 비전 모델이 브라우저에서 직접 실행됩니다.<br>
+                GPU 가속으로 실시간 영상 분석 -- 서버 전송 없이 완전 로컬 처리.
+            </p>
+            <button id="landing-enter-btn" class="landing-btn">시작하기</button>
+            <p class="landing-footnote">Chrome/Edge 데스크톱 브라우저 권장</p>
+        </div>
+    </div>
+
+    <!-- 메인 앱 -->
+    <div id="app" class="app hidden">
+
+        <!-- 헤더 -->
+        <header class="header">
+            <div class="header-left">
+                <svg class="header-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <span class="header-title">AI 근무 집중도 모니터</span>
+            </div>
+            <div class="header-right">
+                <span id="webgpu-badge" class="badge badge-neutral">GPU 확인 중...</span>
+                <span id="model-badge" class="badge badge-neutral">AI 모델 미로드</span>
+            </div>
+        </header>
+
+        <!-- 메인 콘텐츠 -->
+        <main class="main">
+
+            <!-- 왼쪽: 비디오 + 컨트롤 -->
+            <section class="panel panel-video">
+                <div class="video-wrapper">
+                    <video id="webcam-video" autoplay muted playsinline></video>
+                    <div id="focus-overlay" class="focus-overlay">
+                        <div id="focus-indicator" class="focus-indicator">
+                            <span id="focus-icon" class="focus-icon"></span>
+                            <span id="focus-label" class="focus-label">대기 중</span>
+                        </div>
+                    </div>
+                    <div id="capture-flash" class="capture-flash"></div>
+                </div>
+
+                <!-- 컨트롤 바 -->
+                <div class="controls">
+                    <div class="controls-row">
+                        <button id="btn-start" class="btn btn-primary" disabled>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>
+                            <span>모니터링 시작</span>
+                        </button>
+                        <div class="control-group">
+                            <label class="control-label">해상도</label>
+                            <select id="resolution-select" class="select">
+                                <option value="256">256px (빠름)</option>
+                                <option value="384" selected>384px (권장)</option>
+                                <option value="448">448px</option>
+                                <option value="512">512px (정밀)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 모델 로딩 -->
+                <div class="model-section">
+                    <div class="model-row">
+                        <label class="control-label">AI 모델</label>
+                        <select id="model-select" class="select"></select>
+                        <button id="btn-load-model" class="btn btn-secondary">모델 로드</button>
+                    </div>
+                    <div id="progress-container" class="progress-container hidden">
+                        <div class="progress-bar">
+                            <div id="progress-fill" class="progress-fill"></div>
+                        </div>
+                        <span id="progress-text" class="progress-text">준비 중...</span>
+                    </div>
+                    <div class="model-row model-cache-row">
+                        <span id="cache-info" class="cache-info">캐시 없음</span>
+                        <button id="btn-clear-cache" class="btn btn-ghost btn-sm" disabled>캐시 삭제</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 오른쪽: 분석 결과 -->
+            <section class="panel panel-results">
+                <h2 class="panel-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                    실시간 분석 결과
+                </h2>
+
+                <!-- 현재 상태 카드 -->
+                <div id="current-status" class="status-card">
+                    <div class="status-card-header">
+                        <span class="status-card-title">현재 상태</span>
+                        <span id="status-time" class="status-time">--:--:--</span>
+                    </div>
+                    <p id="current-description" class="status-description">
+                        모니터링을 시작하면 AI가 실시간으로 상태를 분석합니다.
+                    </p>
+                </div>
+
+                <!-- 통계 -->
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <span class="stat-value" id="stat-total">0</span>
+                        <span class="stat-label">총 분석</span>
+                    </div>
+                    <div class="stat-card stat-focused">
+                        <span class="stat-value" id="stat-focused">0</span>
+                        <span class="stat-label">집중</span>
+                    </div>
+                    <div class="stat-card stat-distracted">
+                        <span class="stat-value" id="stat-distracted">0</span>
+                        <span class="stat-label">산만</span>
+                    </div>
+                    <div class="stat-card stat-absent">
+                        <span class="stat-value" id="stat-absent">0</span>
+                        <span class="stat-label">부재</span>
+                    </div>
+                </div>
+
+                <!-- 집중률 바 -->
+                <div class="focus-rate-section">
+                    <div class="focus-rate-header">
+                        <span>집중률</span>
+                        <span id="focus-rate-value" class="focus-rate-value">--%</span>
+                    </div>
+                    <div class="focus-rate-bar">
+                        <div id="focus-rate-fill" class="focus-rate-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <!-- 분석 히스토리 -->
+                <h3 class="history-title">분석 기록</h3>
+                <div id="history-list" class="history-list">
+                    <div class="history-empty">아직 분석 기록이 없습니다.</div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="src/app.js"></script>
+</body>
+</html>
