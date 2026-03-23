@@ -26,6 +26,7 @@ const SMOOTH_FACTOR = 0.15;
 const YAW_THRESHOLD = 40;   // 좌우 회전 (기존 25 -> 40)
 const PITCH_THRESHOLD = 35;  // 상하 회전 (기존 20 -> 35)
 const BLINK_THRESHOLD = 0.8; // 눈 감김 (기존 0.6 -> 0.8, 깜빡임 무시)
+const FACE_QUALITY_THRESHOLD = 0.03; // 눈 blendshape 합산 최소값 (이하 = 얼굴 미확인)
 
 /**
  * 초기화
@@ -120,6 +121,16 @@ function processResult(result) {
   const blendshapes = result.faceBlendshapes?.[0]?.categories || [];
   const matrix = result.facialTransformationMatrixes?.[0]?.data;
 
+  // 얼굴 품질 검증: 눈 관련 blendshape 합산으로 실제 얼굴 감지 여부 확인
+  // 머리카락/뒷통수만 보이면 blendshape 값이 전부 0에 가까움
+  const faceQuality = computeFaceQuality(blendshapes);
+  if (faceQuality < FACE_QUALITY_THRESHOLD) {
+    updateStatus('distracted', '얼굴 미확인');
+    drawFaceMesh(landmarks, 'distracted');
+    drawStatusBanner('얼굴 미확인', statusColor('distracted'));
+    return;
+  }
+
   // 머리 회전 각도 계산
   const { yaw, pitch } = estimateHeadPose(landmarks, matrix);
   smoothedYaw = smoothedYaw * (1 - SMOOTH_FACTOR) + Math.abs(yaw) * SMOOTH_FACTOR;
@@ -180,6 +191,27 @@ function estimateHeadPose(landmarks, matrix) {
   const pitch = (nose.y - 0.5) * 40;
 
   return { yaw, pitch };
+}
+
+/**
+ * 얼굴 품질 점수 계산: 눈 관련 blendshape 활성도 합산
+ * 머리카락/뒷통수만 보이면 값이 전부 0에 가까움
+ */
+function computeFaceQuality(blendshapes) {
+  const eyeKeys = [
+    'eyeBlinkLeft', 'eyeBlinkRight',
+    'eyeLookDownLeft', 'eyeLookDownRight',
+    'eyeLookInLeft', 'eyeLookInRight',
+    'eyeLookOutLeft', 'eyeLookOutRight',
+    'eyeLookUpLeft', 'eyeLookUpRight',
+    'eyeSquintLeft', 'eyeSquintRight',
+    'eyeWideLeft', 'eyeWideRight',
+  ];
+  let sum = 0;
+  for (const key of eyeKeys) {
+    sum += getBlendshape(blendshapes, key);
+  }
+  return sum;
 }
 
 function getBlendshape(categories, name) {
