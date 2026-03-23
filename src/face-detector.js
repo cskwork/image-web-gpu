@@ -22,11 +22,15 @@ let smoothedYaw = 0;
 let smoothedPitch = 0;
 const SMOOTH_FACTOR = 0.15;
 
-// 임계값 (완화: 자연스러운 움직임 허용)
-const YAW_THRESHOLD = 40;   // 좌우 회전 (기존 25 -> 40)
-const PITCH_THRESHOLD = 35;  // 상하 회전 (기존 20 -> 35)
-const BLINK_THRESHOLD = 0.8; // 눈 감김 (기존 0.6 -> 0.8, 깜빡임 무시)
-const FACE_QUALITY_THRESHOLD = 0.03; // 눈 blendshape 합산 최소값 (이하 = 얼굴 미확인)
+// 눈 감김 지속 시간 추적 (깜빡임 vs 실제 눈 감김 구분)
+let eyesClosedSince = 0;
+
+// 임계값
+const YAW_THRESHOLD = 40;
+const PITCH_THRESHOLD = 35;
+const BLINK_THRESHOLD = 0.45;  // 프레임 단위 눈 감김 감지 (0.8 -> 0.45)
+const BLINK_SUSTAIN_MS = 800;  // 800ms 이상 지속 시 "눈 감음" 판정 (깜빡임 무시)
+const FACE_QUALITY_THRESHOLD = 0.03;
 
 /**
  * 초기화
@@ -136,10 +140,17 @@ function processResult(result) {
   smoothedYaw = smoothedYaw * (1 - SMOOTH_FACTOR) + Math.abs(yaw) * SMOOTH_FACTOR;
   smoothedPitch = smoothedPitch * (1 - SMOOTH_FACTOR) + Math.abs(pitch) * SMOOTH_FACTOR;
 
-  // 눈 감김 확인
+  // 눈 감김 확인 (지속 시간 기반: 깜빡임 무시, 800ms 이상만 판정)
   const eyeBlinkL = getBlendshape(blendshapes, 'eyeBlinkLeft');
   const eyeBlinkR = getBlendshape(blendshapes, 'eyeBlinkRight');
-  const eyesClosed = eyeBlinkL > BLINK_THRESHOLD && eyeBlinkR > BLINK_THRESHOLD;
+  const eyesClosedNow = eyeBlinkL > BLINK_THRESHOLD && eyeBlinkR > BLINK_THRESHOLD;
+  const now = performance.now();
+  if (eyesClosedNow) {
+    if (eyesClosedSince === 0) eyesClosedSince = now;
+  } else {
+    eyesClosedSince = 0;
+  }
+  const eyesClosed = eyesClosedSince > 0 && (now - eyesClosedSince) > BLINK_SUSTAIN_MS;
 
   // 시선 방향 (눈)
   const lookOutL = getBlendshape(blendshapes, 'eyeLookOutLeft');

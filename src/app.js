@@ -245,7 +245,7 @@ async function analyzeFrame() {
   updateFocusOverlay('analyzing');
 
   try {
-    const prompt = 'Look at this image. If the person\'s face and eyes are clearly visible and looking at the screen or camera, answer "focused". If only hair, back of head, or side profile is visible without clear eyes, answer "distracted". If no person is present, answer "absent". Answer with one word only.';
+    const prompt = 'Look at this image. Answer with one word: "focused", "distracted", or "absent".\n- focused: face visible, eyes OPEN, looking at screen/camera\n- distracted: eyes closed, looking away, only hair/back of head visible, or using phone\n- absent: no person in frame';
     let response;
 
     if (isMobile && isSmolVLMLoaded()) {
