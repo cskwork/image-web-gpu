@@ -6,7 +6,7 @@ import { loadModel, isModelLoaded, generate, clearImageCache, clearModelCache, g
 import { getAvailableModels, getModelConfig, getConfig } from './config.js';
 import { startWebcam, stopWebcam, captureFrame, isActive } from './webcam.js';
 import { classifyFocus, getFocusDisplayInfo, FocusStatus } from './focus-analyzer.js';
-import { loadSmolVLM, isSmolVLMLoaded, analyzeWithSmolVLM } from './smolvlm.js';
+import { initFaceDetector, startDetection, stopDetection, isFaceDetectorReady, disposeFaceDetector } from './face-detector.js';
 
 // ========================================
 // 상태
@@ -119,8 +119,9 @@ async function handleLoadModel() {
 
   try {
     if (IS_MOBILE_DEVICE) {
-      // 모바일: SmolVLM-256M (189MB, 모바일 WASM 호환)
-      await loadSmolVLM(onProgress);
+      // 모바일: MediaPipe Face Landmarker (3.6MB, 실시간 30FPS)
+      const canvas = $('face-overlay-canvas');
+      await initFaceDetector(canvas, onFaceStatus, onProgress);
     } else {
       // 데스크톱: LFM2-VL (선택된 모델)
       const modelId = $('model-select').value;
@@ -176,6 +177,7 @@ async function toggleMonitoring() {
   if (monitoring) {
     // 중지
     monitoring = false;
+    stopDetection();
     stopWebcam();
     btn.classList.remove('active');
     btn.querySelector('span').textContent = '모니터링 시작';
@@ -185,7 +187,7 @@ async function toggleMonitoring() {
   }
 
   // 시작
-  const modelReady = IS_MOBILE_DEVICE ? isSmolVLMLoaded() : isModelLoaded();
+  const modelReady = IS_MOBILE_DEVICE ? isFaceDetectorReady() : isModelLoaded();
   if (!modelReady) {
     alert('먼저 AI 모델을 로드해주세요.');
     return;
@@ -198,8 +200,15 @@ async function toggleMonitoring() {
     btn.classList.add('active');
     btn.querySelector('span').textContent = '모니터링 중지';
     btn.querySelector('svg').innerHTML = '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>';
-    updateFocusOverlay('analyzing');
-    captureLoop();
+
+    if (IS_MOBILE_DEVICE) {
+      // 모바일: MediaPipe 실시간 감지 (requestAnimationFrame 루프)
+      startDetection(video);
+    } else {
+      // 데스크톱: VLM 추론 루프
+      updateFocusOverlay('analyzing');
+      captureLoop();
+    }
   } catch (err) {
     console.error('웹캠 시작 실패:', err);
     alert('웹캠에 접근할 수 없습니다. 권한을 확인해주세요.');
@@ -269,6 +278,25 @@ async function analyzeFrame() {
     addHistoryItem(response, status);
   } catch (err) {
     console.error('분석 오류:', err);
+  }
+}
+
+// ========================================
+// MediaPipe 상태 콜백 (모바일)
+// ========================================
+
+let lastFaceStatusTime = 0;
+const FACE_LOG_INTERVAL = 3000; // 3초마다 히스토리 기록
+
+function onFaceStatus(status, label) {
+  updateFocusOverlay(status);
+
+  const now = Date.now();
+  if (now - lastFaceStatusTime > FACE_LOG_INTERVAL) {
+    lastFaceStatusTime = now;
+    updateCurrentStatus(label, status);
+    updateStats(status);
+    addHistoryItem(label, status);
   }
 }
 
