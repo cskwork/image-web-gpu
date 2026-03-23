@@ -45,16 +45,16 @@ function initLanding() {
 async function checkWebGPU() {
   const badge = $('webgpu-badge');
   if (!navigator.gpu) {
-    badge.textContent = 'GPU 가속 미지원';
-    badge.className = 'badge badge-error';
+    badge.textContent = 'CPU 모드 (느림)';
+    badge.className = 'badge badge-neutral';
     return false;
   }
 
   try {
     const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) {
-      badge.textContent = 'GPU 미감지';
-      badge.className = 'badge badge-error';
+      badge.textContent = 'CPU 모드 (느림)';
+      badge.className = 'badge badge-neutral';
       return false;
     }
     const info = adapter.info || {};
@@ -63,8 +63,8 @@ async function checkWebGPU() {
     badge.className = 'badge badge-success';
     return true;
   } catch (e) {
-    badge.textContent = 'GPU 오류';
-    badge.className = 'badge badge-error';
+    badge.textContent = 'CPU 모드 (느림)';
+    badge.className = 'badge badge-neutral';
     return false;
   }
 }
@@ -115,11 +115,14 @@ async function handleLoadModel() {
           // 파일명에서 기술 정보 제거
           const file = progress.file || '';
           const cleanFile = file
-            .replace(/embed_tokens_?\w*/g, '텍스트 임베딩')
-            .replace(/embed_images_?\w*/g, '이미지 인코더')
-            .replace(/decoder_?\w*/g, '디코더')
-            .replace(/\.onnx/g, '')
-            .replace(/fp16|q4|q8/gi, '');
+            .replace(/embed_tokens[_\w]*/g, '텍스트 임베딩')
+            .replace(/vision_encoder[_\w]*/g, '이미지 인코더')
+            .replace(/embed_images[_\w]*/g, '이미지 인코더')
+            .replace(/decoder_model_merged[_\w]*/g, '디코더')
+            .replace(/decoder[_\w]*/g, '디코더')
+            .replace(/\.onnx_?d?a?t?a?_?\d*/g, '')
+            .replace(/fp16|q4f16|q4|q8/gi, '')
+            .trim();
           progressText.textContent = cleanFile ? `다운로드: ${cleanFile}` : '모델 로딩 중...';
         } else if (progress.status === 'done') {
           progressFill.style.width = '100%';
@@ -135,10 +138,21 @@ async function handleLoadModel() {
     await refreshCacheInfo();
   } catch (err) {
     console.error('모델 로딩 실패:', err);
-    progressContainer.classList.add('hidden');
+    progressFill.style.width = '0%';
     modelBadge.textContent = '로드 실패';
     modelBadge.className = 'badge badge-error';
-    progressText.textContent = `오류: ${err.message}`;
+
+    // 손상된 캐시 자동 정리 후 재시도 안내
+    const msg = err.message || '';
+    const isCorrupt = msg.includes('Cache') || msg.includes('fetch') || msg.includes('network') || msg.includes('aborted');
+    if (isCorrupt) {
+      progressText.textContent = '캐시 손상 감지 - 정리 중...';
+      await clearModelCache();
+      await refreshCacheInfo();
+      progressText.textContent = '캐시를 정리했습니다. "모델 로드"를 다시 눌러주세요.';
+    } else {
+      progressText.textContent = `오류: ${msg}`;
+    }
   } finally {
     loadBtn.disabled = false;
   }
