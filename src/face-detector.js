@@ -20,12 +20,12 @@ let onStatusChange = null;
 let currentStatus = 'unknown';
 let smoothedYaw = 0;
 let smoothedPitch = 0;
-const SMOOTH_FACTOR = 0.3;
+const SMOOTH_FACTOR = 0.15;
 
-// 임계값
-const YAW_THRESHOLD = 25;   // 좌우 회전 각도 (도)
-const PITCH_THRESHOLD = 20; // 상하 회전 각도 (도)
-const BLINK_THRESHOLD = 0.6; // 눈 감김 임계값
+// 임계값 (완화: 자연스러운 움직임 허용)
+const YAW_THRESHOLD = 40;   // 좌우 회전 (기존 25 -> 40)
+const PITCH_THRESHOLD = 35;  // 상하 회전 (기존 20 -> 35)
+const BLINK_THRESHOLD = 0.8; // 눈 감김 (기존 0.6 -> 0.8, 깜빡임 무시)
 
 /**
  * 초기화
@@ -134,7 +134,7 @@ function processResult(result) {
   const lookOutL = getBlendshape(blendshapes, 'eyeLookOutLeft');
   const lookOutR = getBlendshape(blendshapes, 'eyeLookOutRight');
   const lookDown = (getBlendshape(blendshapes, 'eyeLookDownLeft') + getBlendshape(blendshapes, 'eyeLookDownRight')) / 2;
-  const gazeAway = lookOutL > 0.4 || lookOutR > 0.4 || lookDown > 0.5;
+  const gazeAway = lookOutL > 0.6 || lookOutR > 0.6 || lookDown > 0.7;
 
   // 판정
   let status, label;
