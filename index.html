@@ -4,37 +4,69 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AI 근무 집중도 모니터</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" as="style" crossorigin
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-    <!-- 로딩 화면 -->
+    <!-- 랜딩 화면: Split Screen 비대칭 -->
     <div id="landing" class="landing">
         <div class="landing-bg"></div>
-        <div class="landing-content">
-            <div class="landing-icon">
-                <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/>
-                </svg>
+        <div class="landing-split">
+            <!-- 왼쪽: 텍스트 -->
+            <div class="landing-text">
+                <div class="landing-eyebrow">WebGPU Powered</div>
+                <h1 class="landing-title">브라우저에서 실행되는<br>AI 집중도 분석</h1>
+                <p class="landing-desc">
+                    비전 모델이 GPU 가속으로 실시간 영상을 분석합니다.<br>
+                    서버 전송 없이, 브라우저 안에서 완전 로컬 처리.
+                </p>
+                <div class="landing-actions">
+                    <button id="landing-enter-btn" class="landing-btn">
+                        <span>시작하기</span>
+                        <span class="landing-btn-icon">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
+                            </svg>
+                        </span>
+                    </button>
+                    <p class="landing-footnote">Chrome/Edge 데스크톱 브라우저 권장</p>
+                </div>
+                <div id="mobile-warning" class="mobile-warning hidden">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+                    </svg>
+                    <span>모바일에서는 AI 모델 실행이 제한될 수 있습니다.</span>
+                </div>
             </div>
-            <h1 class="landing-title">AI 근무 집중도 모니터</h1>
-            <p class="landing-desc">
-                AI 비전 모델이 브라우저에서 직접 실행됩니다.<br>
-                GPU 가속으로 실시간 영상 분석 -- 서버 전송 없이 완전 로컬 처리.
-            </p>
-            <button id="landing-enter-btn" class="landing-btn">시작하기</button>
-            <div id="mobile-warning" class="mobile-warning hidden">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                    <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-                </svg>
-                <span>모바일 기기에서는 AI 모델 실행이 제한될 수 있습니다. 데스크톱 사용을 권장합니다.</span>
+            <!-- 오른쪽: 비주얼 -->
+            <div class="landing-visual">
+                <div class="landing-visual-card">
+                    <div class="landing-icon">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </div>
+                    <div class="landing-features">
+                        <div class="landing-feature">
+                            <span class="landing-feature-dot dot-emerald"></span>
+                            <span>실시간 얼굴 감지</span>
+                        </div>
+                        <div class="landing-feature">
+                            <span class="landing-feature-dot dot-emerald"></span>
+                            <span>집중 / 산만 / 부재 판정</span>
+                        </div>
+                        <div class="landing-feature">
+                            <span class="landing-feature-dot dot-emerald"></span>
+                            <span>데이터 외부 전송 없음</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <p class="landing-footnote">Chrome/Edge 데스크톱 브라우저 권장</p>
         </div>
     </div>
 
@@ -44,7 +76,7 @@
         <!-- 헤더 -->
         <header class="header">
             <div class="header-left">
-                <svg class="header-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="header-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
                     <circle cx="12" cy="12" r="3"/>
                 </svg>
