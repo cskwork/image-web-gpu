@@ -718,6 +718,24 @@ html, body {
    반응형
    ======================================== */
 
+/* 모바일 경고 */
+.mobile-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  background: var(--yellow-bg);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--yellow);
+  line-height: 1.5;
+}
+
+.mobile-warning svg { flex-shrink: 0; }
+
+/* 태블릿 */
 @media (max-width: 900px) {
   .main {
     grid-template-columns: 1fr;
@@ -735,5 +753,73 @@ html, body {
 
   .stats-row {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 모바일 */
+@media (max-width: 600px) {
+  .header {
+    padding: 0 12px;
+    gap: 8px;
+  }
+
+  .header-title {
+    font-size: 0.85rem;
+  }
+
+  .header-right {
+    gap: 4px;
+  }
+
+  .badge {
+    font-size: 0.68rem;
+    padding: 3px 8px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .video-wrapper {
+    aspect-ratio: 1;
+    max-height: 40vh;
+  }
+
+  .controls-row {
+    flex-wrap: wrap;
+  }
+
+  .model-row {
+    flex-wrap: wrap;
+  }
+
+  .model-row .select {
+    min-width: 0;
+  }
+
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+
+  .stat-card {
+    padding: 8px;
+  }
+
+  .stat-value {
+    font-size: 1.2rem;
+  }
+
+  .landing-title {
+    font-size: 1.5rem;
+  }
+
+  .landing-desc {
+    font-size: 0.85rem;
+  }
+
+  .landing-btn {
+    padding: 12px 32px;
+    font-size: 0.9rem;
   }
 }

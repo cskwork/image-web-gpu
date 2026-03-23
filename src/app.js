@@ -370,8 +370,20 @@ function escapeHtml(text) {
 // 초기화
 // ========================================
 
+function checkMobile() {
+  const isMobile =
+    /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+    (navigator.maxTouchPoints > 0 && window.innerWidth < 1024);
+
+  if (isMobile) {
+    const warning = $('mobile-warning');
+    if (warning) warning.classList.remove('hidden');
+  }
+}
+
 async function init() {
   initLanding();
+  checkMobile();
   populateModels();
   await checkWebGPU();
 
