@@ -25,13 +25,105 @@ const DB_NAME = 'onnx-model-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'files';
 
-// 모바일: 50MB 이상 파일은 ONNX Runtime이 URL로 직접 스트리밍 (JS 메모리 절약)
-// 데스크톱: 2GB까지 JS에서 버퍼링 (IDB 캐시 가능)
+// 모바일 감지
 const IS_MOBILE = typeof navigator !== 'undefined' && (
   /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
   (navigator.maxTouchPoints > 0 && (typeof screen !== 'undefined' && screen.width < 1024))
 );
+// 모바일: 50MB 이상은 OPFS 스트리밍 또는 URL 직접 전달
+// 데스크톱: 2GB까지 JS 버퍼링 + IDB 캐시
 const LARGE_FILE_THRESHOLD = IS_MOBILE ? 50 * 1024 * 1024 : 2 * 1024 * 1024 * 1024;
+
+// OPFS 지원 여부 (Safari 17+, Chrome 86+)
+let _opfsSupported = null;
+async function isOPFSSupported() {
+  if (_opfsSupported !== null) return _opfsSupported;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const testHandle = await root.getFileHandle('__opfs_test__', { create: true });
+    const writable = await testHandle.createWritable();
+    await writable.close();
+    await root.removeEntry('__opfs_test__');
+    _opfsSupported = true;
+  } catch {
+    _opfsSupported = false;
+  }
+  return _opfsSupported;
+}
+
+/**
+ * OPFS에 fetch 스트림을 JS 메모리 없이 직접 저장
+ * @returns {string|null} blob URL (성공 시) 또는 null (실패 시)
+ */
+async function streamToOPFS(url, fetchOptions, onProgress) {
+  if (!(await isOPFSSupported())) return null;
+
+  // 파일명을 URL 해시로 생성 (충돌 방지)
+  const safeKey = 'onnx_' + btoa(url).replace(/[^a-zA-Z0-9]/g, '').slice(0, 60);
+
+  try {
+    const root = await navigator.storage.getDirectory();
+
+    // 이미 캐시된 파일 확인
+    try {
+      const existing = await root.getFileHandle(safeKey);
+      const file = await existing.getFile();
+      // HEAD 요청으로 원본 크기 확인
+      const headResp = await fetch(url, { method: 'HEAD', ...fetchOptions });
+      const expectedSize = parseInt(headResp.headers.get('content-length') || '0', 10);
+      if (file.size > 0 && (!expectedSize || file.size >= expectedSize)) {
+        log(`[OPFS HIT] ${url.split('/').pop()} (${(file.size / 1e6).toFixed(1)} MB)`);
+        return URL.createObjectURL(file);
+      }
+      // 불완전 -> 삭제 후 재다운로드
+      await root.removeEntry(safeKey);
+    } catch { /* 파일 없음 - 정상 */ }
+
+    // 스트리밍 다운로드 -> OPFS 직접 쓰기
+    const response = await fetch(url, fetchOptions);
+    if (!response.ok) return null;
+
+    const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
+    const fileHandle = await root.getFileHandle(safeKey, { create: true });
+    const writable = await fileHandle.createWritable();
+    const reader = response.body.getReader();
+    let received = 0;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writable.write(value);
+      received += value.length;
+      if (onProgress && contentLength) onProgress(received, contentLength);
+    }
+
+    await writable.close();
+
+    // 저장된 파일의 blob URL 반환
+    const file = await (await root.getFileHandle(safeKey)).getFile();
+    log(`[OPFS SAVED] ${url.split('/').pop()} (${(file.size / 1e6).toFixed(1)} MB)`);
+    return URL.createObjectURL(file);
+  } catch (e) {
+    log(`[OPFS ERROR] ${e.message}`);
+    return null;
+  }
+}
+
+/**
+ * OPFS 캐시 전체 삭제
+ */
+async function clearOPFS() {
+  try {
+    if (!(await isOPFSSupported())) return;
+    const root = await navigator.storage.getDirectory();
+    for await (const [name] of root.entries()) {
+      if (name.startsWith('onnx_')) await root.removeEntry(name);
+    }
+    log('[OPFS CLEARED]');
+  } catch (e) {
+    log(`[OPFS CLEAR ERROR] ${e.message}`);
+  }
+}
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -173,9 +265,8 @@ async function fetchWithCache(url, options = {}, onProgress = null) {
  * 모델 캐시 삭제
  */
 export async function clearModelCache() {
-  // IndexedDB 삭제
   const idbCleared = await idbClear();
-  // 기존 Cache API도 정리 (이전 버전 호환)
+  await clearOPFS();
   try { await caches.delete('onnx-models-v1'); } catch {}
   log(idbCleared ? 'Model cache cleared' : 'No cache to clear');
   return idbCleared;
@@ -488,14 +579,22 @@ export class VLModel {
           sessionOptions.externalData = [];
           for (const f of dataFiles) {
             if (f.size > LARGE_FILE_THRESHOLD) {
-              // JS 메모리 절약: ONNX Runtime이 URL에서 직접 스트리밍
+              // 대용량 파일: OPFS 스트리밍 캐시 시도 -> 실패 시 URL 직접 전달
               const sizeMB = (f.size / 1024 / 1024).toFixed(0);
-              log(`Streaming ${f.path} (${sizeMB} MB) via ONNX Runtime URL loader`);
-              report('loading', progress, `${fileName}: ${sizeMB}MB 로딩 중 (잠시 기다려 주세요)...`);
-              sessionOptions.externalData.push({
-                path: f.path,
-                data: f.url,
-              });
+              report('loading', progress, `${fileName}: ${sizeMB}MB 다운로드 중...`);
+
+              // OPFS: fetch -> 디스크 직접 쓰기 (JS 메모리 ~0)
+              const blobUrl = await streamToOPFS(f.url, fetchOptions, makeProgressCallback(f.path));
+
+              if (blobUrl) {
+                log(`Using OPFS blob URL for ${f.path}`);
+                sessionOptions.externalData.push({ path: f.path, data: blobUrl });
+              } else {
+                // OPFS 미지원: ONNX Runtime이 URL에서 직접 로드
+                log(`OPFS unavailable, using direct URL for ${f.path}`);
+                report('loading', progress, `${fileName}: ${sizeMB}MB 로딩 중...`);
+                sessionOptions.externalData.push({ path: f.path, data: f.url });
+              }
             } else {
               // File fits in memory - fetch with caching and progress
               const dataResponse = await fetchWithCache(f.url, fetchOptions, makeProgressCallback(f.path));
