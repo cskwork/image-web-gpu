@@ -6,6 +6,7 @@ import { loadModel, isModelLoaded, generate, clearImageCache, clearModelCache, g
 import { getAvailableModels, getModelConfig, getConfig } from './config.js';
 import { startWebcam, stopWebcam, captureFrame, isActive } from './webcam.js';
 import { classifyFocus, getFocusDisplayInfo, FocusStatus } from './focus-analyzer.js';
+import { loadSmolVLM, isSmolVLMLoaded, analyzeWithSmolVLM } from './smolvlm.js';
 
 // ========================================
 // 상태
@@ -92,9 +93,6 @@ function populateModels() {
 }
 
 async function handleLoadModel() {
-  const modelId = $('model-select').value;
-  if (!modelId) return;
-
   const loadBtn = $('btn-load-model');
   const progressContainer = $('progress-container');
   const progressFill = $('progress-fill');
@@ -103,36 +101,33 @@ async function handleLoadModel() {
 
   loadBtn.disabled = true;
   progressContainer.classList.remove('hidden');
+  progressFill.style.width = '0%';
   modelBadge.textContent = '로딩 중...';
   modelBadge.className = 'badge badge-neutral';
 
-  // 기존 캡처 중지
   if (monitoring) toggleMonitoring();
-  clearImageCache();
+
+  const onProgress = (progress) => {
+    if (progress.status === 'loading') {
+      const pct = Math.round(progress.progress || 0);
+      progressFill.style.width = `${pct}%`;
+      progressText.textContent = progress.file ? `다운로드: ${progress.file}` : '모델 로딩 중...';
+    } else if (progress.status === 'done') {
+      progressFill.style.width = '100%';
+    }
+  };
 
   try {
-    await loadModel(modelId, {
-      progressCallback: (progress) => {
-        if (progress.status === 'loading') {
-          const pct = Math.round(progress.progress || 0);
-          progressFill.style.width = `${pct}%`;
-          // 파일명에서 기술 정보 제거
-          const file = progress.file || '';
-          const cleanFile = file
-            .replace(/embed_tokens[_\w]*/g, '텍스트 임베딩')
-            .replace(/vision_encoder[_\w]*/g, '이미지 인코더')
-            .replace(/embed_images[_\w]*/g, '이미지 인코더')
-            .replace(/decoder_model_merged[_\w]*/g, '디코더')
-            .replace(/decoder[_\w]*/g, '디코더')
-            .replace(/\.onnx_?d?a?t?a?_?\d*/g, '')
-            .replace(/fp16|q4f16|q4|q8/gi, '')
-            .trim();
-          progressText.textContent = cleanFile ? `다운로드: ${cleanFile}` : '모델 로딩 중...';
-        } else if (progress.status === 'done') {
-          progressFill.style.width = '100%';
-        }
-      },
-    });
+    if (IS_MOBILE_DEVICE) {
+      // 모바일: SmolVLM-256M (189MB, 모바일 WASM 호환)
+      await loadSmolVLM(onProgress);
+    } else {
+      // 데스크톱: LFM2-VL (선택된 모델)
+      const modelId = $('model-select').value;
+      if (!modelId) return;
+      clearImageCache();
+      await loadModel(modelId, { progressCallback: onProgress });
+    }
 
     progressContainer.classList.add('hidden');
     modelBadge.textContent = 'AI 모델 준비 완료';
@@ -145,18 +140,7 @@ async function handleLoadModel() {
     progressFill.style.width = '0%';
     modelBadge.textContent = '로드 실패';
     modelBadge.className = 'badge badge-error';
-
-    // 손상된 캐시 자동 정리 후 재시도 안내
-    const msg = err.message || '';
-    const isCorrupt = msg.includes('Cache') || msg.includes('fetch') || msg.includes('network') || msg.includes('aborted');
-    if (isCorrupt) {
-      progressText.textContent = '캐시 손상 감지 - 정리 중...';
-      await clearModelCache();
-      await refreshCacheInfo();
-      progressText.textContent = '캐시를 정리했습니다. "모델 로드"를 다시 눌러주세요.';
-    } else {
-      progressText.textContent = `오류: ${msg}`;
-    }
+    progressText.textContent = `오류: ${err.message || err}`;
   } finally {
     loadBtn.disabled = false;
   }
@@ -201,7 +185,8 @@ async function toggleMonitoring() {
   }
 
   // 시작
-  if (!isModelLoaded()) {
+  const modelReady = IS_MOBILE_DEVICE ? isSmolVLMLoaded() : isModelLoaded();
+  if (!modelReady) {
     alert('먼저 AI 모델을 로드해주세요.');
     return;
   }
@@ -251,25 +236,26 @@ async function analyzeFrame() {
   updateFocusOverlay('analyzing');
 
   try {
-    // 영어 프롬프트 (짧고 효율적, 모든 모델에서 안정적)
-    // 응답은 focus-analyzer에서 한국어로 분류
-    const messages = [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', value: dataURL },
-          {
-            type: 'text',
-            value: 'Is the person looking at the camera or screen? Answer briefly: focused, distracted, or absent.',
-          },
-        ],
-      },
-    ];
+    const prompt = 'Is the person looking at the camera or screen? Answer briefly: focused, distracted, or absent.';
+    let response;
 
-    // 이미지 캐시 클리어 (매 프레임 새 이미지)
-    clearImageCache();
-
-    const response = await generate(messages, { maxNewTokens: maxTokens });
+    if (isMobile && isSmolVLMLoaded()) {
+      // 모바일: SmolVLM 직접 호출
+      response = await analyzeWithSmolVLM(dataURL, prompt, { maxNewTokens: maxTokens });
+    } else {
+      // 데스크톱: LFM2-VL
+      const messages = [
+        {
+          role: 'user',
+          content: [
+            { type: 'image', value: dataURL },
+            { type: 'text', value: prompt },
+          ],
+        },
+      ];
+      clearImageCache();
+      response = await generate(messages, { maxNewTokens: maxTokens });
+    }
 
     if (!monitoring) return;
 
@@ -397,9 +383,15 @@ function checkMobile() {
   const warning = $('mobile-warning');
   if (warning) warning.classList.remove('hidden');
 
-  // 모바일: 해상도 선택기 숨기고 256px 강제 (메모리 절약)
+  // 모바일: 해상도/모델 선택기 숨기기 (SmolVLM 256px 강제)
   const resGroup = $('resolution-select')?.closest('.control-group');
   if (resGroup) resGroup.style.display = 'none';
+  const modelRow = $('model-select')?.closest('.model-row');
+  if (modelRow) {
+    const label = modelRow.querySelector('.control-label');
+    if (label) label.textContent = 'AI 모델 (모바일)';
+    $('model-select').style.display = 'none';
+  }
 }
 
 async function init() {
