@@ -76,12 +76,13 @@ async function checkWebGPU() {
 function populateModels() {
   const select = $('model-select');
   const models = getAvailableModels();
+  const config = getConfig();
   select.innerHTML = '';
   models.forEach((model) => {
     const opt = document.createElement('option');
     opt.value = model.id;
-    // 기술명 숨김 - 사용자에게는 라벨과 크기만 표시
     opt.textContent = `${model.label} (${model.size})`;
+    if (model.id === config.defaultModel) opt.selected = true;
     select.appendChild(opt);
   });
 }

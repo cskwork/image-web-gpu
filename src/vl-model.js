@@ -291,15 +291,18 @@ export class VLModel {
   constructor() {
     this.tokenizer = null;
     this.embedTokensSession = null;
-    this.embedImagesSession = null;
+    this.visionEncoderSession = null;
     this.decoderSession = null;
     this.config = null;
     this.imageTokenId = null;
     this.eosTokenId = null;
-    this.hiddenSize = 1024;  // Default for 450M
+    this.hiddenSize = 1024;
+
+    // 아키텍처별 설정 (load 시 주입)
+    this.arch = null;
 
     // Image embedding cache (persists between turns)
-    this.imageCache = new Map();  // URL -> { embeddings, numTokens }
+    this.imageCache = new Map();
   }
 
   /**
@@ -318,7 +321,15 @@ export class VLModel {
    * @param {string} options.quantization - Quantization type ('q4', 'q8', or null for fp32)
    */
   async load(modelPath, options = {}) {
-    const { progressCallback, device = 'webgpu', quantization = null } = options;
+    const { progressCallback, device = 'webgpu', quantization = null, arch = null } = options;
+
+    // 아키텍처 설정 저장 (컴포넌트 파일명, 캐시 타입)
+    this.arch = arch || {
+      embedTokens: 'embed_tokens',
+      visionEncoder: 'embed_images',
+      decoder: 'decoder',
+      cacheType: 'float32',
+    };
 
     const report = (status, progress = 0, file = '') => {
       if (progressCallback) {
@@ -501,20 +512,20 @@ export class VLModel {
       // Parse quantization config (can be string for legacy or object for new format)
       const quantConfig = typeof quantization === 'object' ? quantization : {
         decoder: quantization,
-        embedImages: quantization === 'q4' ? 'q8' : quantization,
+        visionEncoder: quantization,
       };
 
-      // Load embed_tokens (always fp16 when quantized, no q4/q8 version exists)
-      const embedTokensQuant = quantConfig.decoder ? 'fp16' : null;
-      this.embedTokensSession = await loadOnnxWithExternalData('embed_tokens', 20, embedTokensQuant);
+      // Load embed_tokens
+      const embedTokensQuant = quantConfig.decoder ? (quantConfig.decoder.includes('f16') ? quantConfig.decoder : 'fp16') : null;
+      this.embedTokensSession = await loadOnnxWithExternalData(this.arch.embedTokens, 20, embedTokensQuant);
 
-      // Load embed_images (use specified quantization)
-      const embedImagesQuant = quantConfig.embedImages || null;
-      this.embedImagesSession = await loadOnnxWithExternalData('embed_images', 40, embedImagesQuant);
+      // Load vision encoder (embed_images or vision_encoder)
+      const visionEncoderQuant = quantConfig.visionEncoder || quantConfig.embedImages || null;
+      this.visionEncoderSession = await loadOnnxWithExternalData(this.arch.visionEncoder, 40, visionEncoderQuant);
 
-      // Load decoder (use specified quantization)
+      // Load decoder (decoder or decoder_model_merged)
       const decoderQuant = quantConfig.decoder || null;
-      this.decoderSession = await loadOnnxWithExternalData('decoder', 60, decoderQuant);
+      this.decoderSession = await loadOnnxWithExternalData(this.arch.decoder, 60, decoderQuant);
 
       report('done', 100, '');
       return true;
@@ -584,7 +595,7 @@ export class VLModel {
       );
 
       // Run embed_images
-      let outputs = await this.embedImagesSession.run({
+      let outputs = await this.visionEncoderSession.run({
         pixel_values: pixelValuesTensor,
         pixel_attention_mask: attentionMaskTensor,
         spatial_shapes: spatialShapesTensor,
@@ -682,22 +693,21 @@ export class VLModel {
    */
   initializeCache() {
     const cache = {};
+    const useFloat16 = this.arch && this.arch.cacheType === 'float16';
+    const dtype = useFloat16 ? 'float16' : 'float32';
+    const TypedArray = useFloat16 ? Uint16Array : Float32Array;
 
     for (const name of this.decoderSession.inputNames) {
       if (name.startsWith('past_conv')) {
-        // Conv states: [batch, hidden_size, kernel_size-1]
-        // Kernel size is 4, so we need 3 states
         cache[name] = new ort.Tensor(
-          'float32',
-          new Float32Array(1 * this.hiddenSize * 3),
+          dtype,
+          new TypedArray(1 * this.hiddenSize * 3),
           [1, this.hiddenSize, 3]
         );
       } else if (name.startsWith('past_key_values')) {
-        // KV cache: [batch, num_kv_heads, past_seq_len, head_dim]
-        // Initialize with 0 length sequence
         cache[name] = new ort.Tensor(
-          'float32',
-          new Float32Array(0),  // Empty cache initially
+          dtype,
+          new TypedArray(0),
           [1, this.numKVHeads, 0, this.headDim]
         );
       }
@@ -908,13 +918,13 @@ export class VLModel {
       }
       this.embedTokensSession = null;
     }
-    if (this.embedImagesSession) {
+    if (this.visionEncoderSession) {
       try {
-        await this.embedImagesSession.release();
+        await this.visionEncoderSession.release();
       } catch (e) {
         console.warn('Error releasing embedImagesSession:', e);
       }
-      this.embedImagesSession = null;
+      this.visionEncoderSession = null;
     }
     if (this.decoderSession) {
       try {

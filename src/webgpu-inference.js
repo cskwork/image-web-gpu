@@ -53,10 +53,11 @@ export class WebGPUInference {
       // Create new model instance
       this.model = new VLModel();
 
-      // Load the model with quantization from config
+      // Load the model with quantization and arch config
       await this.model.load(modelConfig.path, {
         device: 'webgpu',
-        quantization: modelConfig.quantization || { decoder: 'q4', embedImages: 'q4' },
+        quantization: modelConfig.quantization || { decoder: 'q4', visionEncoder: 'q4' },
+        arch: modelConfig.arch || null,
         progressCallback: options.progressCallback,
       });
 
