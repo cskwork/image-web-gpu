@@ -25,7 +25,13 @@ const DB_NAME = 'onnx-model-cache';
 const DB_VERSION = 1;
 const STORE_NAME = 'files';
 
-const LARGE_FILE_THRESHOLD = 2 * 1024 * 1024 * 1024;
+// 모바일: 50MB 이상 파일은 ONNX Runtime이 URL로 직접 스트리밍 (JS 메모리 절약)
+// 데스크톱: 2GB까지 JS에서 버퍼링 (IDB 캐시 가능)
+const IS_MOBILE = typeof navigator !== 'undefined' && (
+  /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 0 && (typeof screen !== 'undefined' && screen.width < 1024))
+);
+const LARGE_FILE_THRESHOLD = IS_MOBILE ? 50 * 1024 * 1024 : 2 * 1024 * 1024 * 1024;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -482,9 +488,10 @@ export class VLModel {
           sessionOptions.externalData = [];
           for (const f of dataFiles) {
             if (f.size > LARGE_FILE_THRESHOLD) {
-              // File too large for JS memory - let ONNX Runtime stream it
-              log(`Large file ${f.path} (${(f.size / 1024 / 1024 / 1024).toFixed(2)} GB), using URL-based loading`);
-              report('loading', progress, `${fileName} (streaming ${f.path}...)`);
+              // JS 메모리 절약: ONNX Runtime이 URL에서 직접 스트리밍
+              const sizeMB = (f.size / 1024 / 1024).toFixed(0);
+              log(`Streaming ${f.path} (${sizeMB} MB) via ONNX Runtime URL loader`);
+              report('loading', progress, `${fileName}: ${sizeMB}MB 로딩 중 (잠시 기다려 주세요)...`);
               sessionOptions.externalData.push({
                 path: f.path,
                 data: f.url,
