@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-24T08:40:00Z",
+  "title": "Design System: AI 근무 집중도 모니터",
+  "extensions": {
+    "colorMeta": {
+      "go-teal": { "role": "primary", "displayName": "Go Teal", "canonical": "#1fd1ad", "tonalRamp": ["#03211b", "#07463a", "#0b6d5a", "#11977d", "#1fd1ad", "#5fe0c6", "#9eeedd", "#d8f9f2"] },
+      "signal-amber": { "role": "primary", "displayName": "Signal Amber", "canonical": "#ffb020", "tonalRamp": ["#2a1a00", "#553500", "#805000", "#b37000", "#ffb020", "#ffc75e", "#ffdc9b", "#fff1d8"] },
+      "stop-red": { "role": "primary", "displayName": "Stop Red", "canonical": "#ff4d3f", "tonalRamp": ["#2b0703", "#5a120b", "#8a1d13", "#c02a1d", "#ff4d3f", "#ff7f75", "#ffb1ab", "#ffe2df"] },
+      "guide-blue": { "role": "secondary", "displayName": "Guide Blue", "canonical": "#0a58b0", "tonalRamp": ["#021a35", "#04305f", "#07448a", "#0a58b0", "#2f78cc", "#6a9ddc", "#a8c6ec", "#e0ecf9"] },
+      "plate-white": { "role": "secondary", "displayName": "Plate White", "canonical": "#f3f1ea", "tonalRamp": ["#2b2a26", "#56544d", "#817e74", "#aba89c", "#d0cdc2", "#e4e1d8", "#f3f1ea", "#fbfaf6"] },
+      "lane-yellow": { "role": "tertiary", "displayName": "Lane Yellow", "canonical": "#ffd43b", "tonalRamp": ["#2e2400", "#5c4800", "#8a6c00", "#b89000", "#e6b400", "#ffd43b", "#ffe483", "#fff5cc"] },
+      "night-ground": { "role": "neutral", "displayName": "Night Ground", "canonical": "#0b1017", "tonalRamp": ["#05080c", "#0b1017", "#101722", "#172030", "#252a31", "#8a929d", "#aab1bb", "#ece9e1"] }
+    },
+    "typographyMeta": {
+      "verdict": { "displayName": "Verdict", "purpose": "The current state word, colored by state." },
+      "display": { "displayName": "Display", "purpose": "Landing headline only." },
+      "sign-numeral": { "displayName": "Sign Numeral", "purpose": "Counts, timestamps, cache size (tabular)." },
+      "led": { "displayName": "LED", "purpose": "Focus-rate digits in the readout and the signal countdown window only." }
+    },
+    "shadows": [
+      { "name": "housing", "value": "inset 0 1px 0 rgba(255,255,255,.07), inset 0 0 0 1px #252a31, 0 22px 40px -18px rgba(0,0,0,.9)", "purpose": "Signal head standing off the wall." },
+      { "name": "sign-board", "value": "0 20px 40px -24px rgba(0,0,0,.9)", "purpose": "Guide sign and tally plate." },
+      { "name": "lamp-glow", "value": "0 0 26px -2px color-mix(in oklab, var(--c) 70%, transparent), 0 18px 60px -10px color-mix(in oklab, var(--c) 55%, transparent)", "purpose": "Emitted light of the lit lens only." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Button press, meter fill, lamp decay." },
+      { "name": "lamp-decay", "value": "520ms", "purpose": "Afterglow of the previously lit lamp; lamps themselves strike with no transition." },
+      { "name": "analyzing-blink", "value": "900ms steps(2)", "purpose": "Single dot under the LED window while a frame is analyzed." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "1080px" },
+      { "name": "mobile", "value": "760px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Go Button",
+      "kind": "button",
+      "html": "<button class=\"btn btn-go\">모니터링 시작</button>",
+      "css": ".btn-go{display:inline-flex;align-items:center;gap:10px;min-height:52px;padding:0 24px;border:0;border-radius:8px;font:700 16px 'Pretendard Variable',sans-serif;background:#1fd1ad;color:#03211b}"
+    },
+    {
+      "name": "Guide Button",
+      "kind": "button",
+      "html": "<button class=\"btn btn-guide\">시작하기</button>",
+      "css": ".btn-guide{min-height:60px;padding:0 26px;border:0;border-radius:10px;font:700 18px 'Pretendard Variable',sans-serif;background:#0a58b0;color:#fff;box-shadow:inset 0 0 0 4px #0a58b0,inset 0 0 0 6px rgba(255,255,255,.92)}"
+    },
+    {
+      "name": "Sign Plate",
+      "kind": "chip",
+      "html": "<span class=\"plate\">데이터 외부 전송 없음</span>",
+      "css": ".plate{display:inline-flex;align-items:center;min-height:38px;padding:0 14px;border-radius:6px;background:#f3f1ea;color:#121418;font:700 14.5px 'Pretendard Variable',sans-serif;box-shadow:inset 0 0 0 3px #f3f1ea,inset 0 0 0 4.5px #121418}"
+    },
+    {
+      "name": "Plate Select",
+      "kind": "input",
+      "html": "<select class=\"select\"><option>384px (권장)</option></select>",
+      "css": ".select{appearance:none;min-height:44px;padding:0 38px 0 14px;border:0;border-radius:8px;font:600 15px 'Pretendard Variable',sans-serif;color:#121418;background:#f3f1ea}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Signal at the Desk",
+    "overview": "The app is a traffic signal head standing beside your camera at night. Three lamps are always there. Exactly one is lit, and you can read it from across the room. Everything that is not the verdict is an auxiliary road sign bolted below it: white plates with a black inner rule for facts and counts, and a guide-sign blue board for setup.",
+    "keyCharacteristics": [
+      "Every state is always shown, with one of them lit (three lamps, twenty history cells).",
+      "Sign plates carry the information. There are no generic cards.",
+      "LED dot-matrix numerals appear only where a signal would show numbers.",
+      "One dark scene, taken from the lighting of a desk at night."
+    ],
+    "rules": [
+      { "section": "Colors", "name": "The Three Lights Rule", "body": "Teal, amber, and red mean the three verdicts and nothing else. Never use them as decoration or for unrelated categories." },
+      { "section": "Colors", "name": "The Label Beside the Light Rule", "body": "A status color never appears without its word or pictogram." },
+      { "section": "Typography", "name": "The Keep-All Rule", "body": "Korean text uses word-break: keep-all so lines break between words, not inside them." },
+      { "section": "Typography", "name": "The LED Is Earned Rule", "body": "Doto is used only for numbers a signal would display. Never use it for prose or labels." },
+      { "section": "Elevation & Depth", "name": "The Only Light Is a Lamp Rule", "body": "Colored glow is allowed only on a lit signal lens." }
+    ],
+    "dos": [
+      "Do show all three lamps at all times and light only one.",
+      "Do use white plates or the guide-blue board for any new grouping of controls or facts.",
+      "Do self-host every font and image. The site runs cross-origin isolated (COOP/COEP).",
+      "Do switch the signal to the horizontal arrangement on narrow screens."
+    ],
+    "donts": [
+      "Don't add colored glow to anything except a lit lamp.",
+      "Don't use eyebrow or kicker labels above headings.",
+      "Don't animate lamps on with fades or tweens. Signals snap on.",
+      "Don't add looping or scrolling motion. The analysis indicator is a stepped blink."
+    ]
+  }
+}
