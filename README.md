@@ -19,6 +19,10 @@ Real-time webcam analysis that classifies user state as **focused**, **distracte
 - **Focus Analytics** -- Live focus rate percentage, per-session statistics, and timestamped analysis history.
 - **OPFS Caching** -- Model weights cached in Origin Private File System for instant subsequent loads.
 - **Face Quality Validation** -- Eye blendshape sum check prevents false "focused" when only hair/back of head is visible.
+- **Session Persistence** -- Tally, focus rate, and the last 20 verdicts are kept in `localStorage`, so a reload resumes the session. A reset control starts a new one.
+- **Glanceable State** -- The tab title and favicon show the current verdict, so you can check it from another tab.
+- **Fast First Load** -- The AI runtimes (ONNX Runtime, Transformers.js, MediaPipe) load on demand, so the first page load is about 16 KB of JS.
+- **Inline Recovery** -- Camera-permission, missing-camera, busy-camera, and model-load failures show in-page messages that say how to fix them.
 
 ## Tech Stack
 
@@ -28,7 +32,7 @@ Real-time webcam analysis that classifies user state as **focused**, **distracte
 | VLM Inference | ONNX Runtime Web (WebGPU backend) |
 | Face Detection (Mobile) | MediaPipe Face Landmarker (float16, 3.6 MB) |
 | Build | Vite |
-| Styling | Vanilla CSS (Pretendard, taste-skill design system) |
+| Styling | Vanilla CSS, signal-head design system (see `DESIGN.md`); self-hosted Pretendard, Barlow Semi Condensed, Doto |
 | Deploy | Vercel |
 
 ## Models
@@ -61,6 +65,12 @@ npm install
 npm run dev
 ```
 
+Run unit tests (Node's built-in test runner):
+
+```bash
+npm test
+```
+
 Build for production:
 
 ```bash
@@ -80,6 +90,7 @@ src/
                       #   - Head pose estimation (yaw/pitch)
                       #   - Eye closure detection (800ms sustain)
                       #   - Face quality validation (blendshape sum)
+  session-store.js    # Session tally/history persistence (localStorage)
   focus-analyzer.js   # VLM response classifier (desktop path)
                       #   - Keyword-based scoring
                       #   - focused/distracted/absent classification
