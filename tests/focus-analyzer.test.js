@@ -18,3 +18,11 @@ test('keyword fallback prefers absent, then distracted over focused', () => {
   assert.equal(classifyFocus('person looking away, using a phone').status, FocusStatus.DISTRACTED);
   assert.equal(classifyFocus('person typing at the computer').status, FocusStatus.FOCUSED);
 });
+
+test('one-word answers wrapped in quotes, markdown or punctuation still map directly', () => {
+  // The prompt in src/app.js lists the options in double quotes, so the model can echo them.
+  assert.equal(classifyFocus('"focused"').status, FocusStatus.FOCUSED);
+  assert.equal(classifyFocus('**Focused**').status, FocusStatus.FOCUSED);
+  assert.equal(classifyFocus('focused!').status, FocusStatus.FOCUSED);
+  assert.equal(classifyFocus(' "Absent." ').status, FocusStatus.ABSENT);
+});

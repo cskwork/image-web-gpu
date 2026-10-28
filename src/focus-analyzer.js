@@ -44,15 +44,17 @@ export function classifyFocus(description) {
   }
 
   const text = description.toLowerCase().trim();
+  // 프롬프트가 선택지를 따옴표로 감싸므로 모델이 "focused", **focused** 처럼 답할 수 있다
+  const word = text.replace(/^[\s"'`*]+|[\s"'`*.!]+$/g, '');
 
   // 1차: 모델이 단일 단어로 답한 경우 (영어 프롬프트 최적화)
-  if (/^focused\.?$/.test(text) || /^yes/.test(text)) {
+  if (word === 'focused' || /^yes/.test(text)) {
     return { status: FocusStatus.FOCUSED, confidence: 1 };
   }
-  if (/^distracted\.?$/.test(text)) {
+  if (word === 'distracted') {
     return { status: FocusStatus.DISTRACTED, confidence: 1 };
   }
-  if (/^absent\.?$/.test(text) || /^no one/.test(text) || /^empty/.test(text)) {
+  if (word === 'absent' || /^no one/.test(text) || /^empty/.test(text)) {
     return { status: FocusStatus.ABSENT, confidence: 1 };
   }
 

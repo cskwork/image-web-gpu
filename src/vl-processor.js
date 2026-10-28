@@ -95,7 +95,7 @@ function findClosestAspectRatio(aspectRatio, targetRatios, width, height, imageS
  * Check if image is too large to process as one tile
  * Matches Python's _is_img_too_large()
  */
-function isImageTooLarge(width, height) {
+export function isImageTooLarge(width, height) {
   const { patchSize, maxImageTokens, downsampleFactor, maxPixelsTolerance } = CONFIG;
   const hBar = Math.max(patchSize, roundByFactor(height, patchSize));
   const wBar = Math.max(patchSize, roundByFactor(width, patchSize));
@@ -109,7 +109,7 @@ function isImageTooLarge(width, height) {
  * Matches Python's _smart_resize()
  * @returns {{width: number, height: number}}
  */
-function smartResize(width, height) {
+export function smartResize(width, height) {
   const { patchSize, downsampleFactor, minImageTokens, maxImageTokens } = CONFIG;
   const totalFactor = patchSize * downsampleFactor;  // 32
   const minPixels = minImageTokens * (patchSize ** 2) * (downsampleFactor ** 2);
@@ -135,7 +135,7 @@ function smartResize(width, height) {
  * Get number of tokens for an image of given dimensions
  * Matches Python's _get_tokens_num()
  */
-function getTokensNum(height, width) {
+export function getTokensNum(height, width) {
   const { patchSize, downsampleFactor } = CONFIG;
   const numPatchesHeight = Math.floor(height / patchSize);
   const numPatchesWidth = Math.floor(width / patchSize);
@@ -151,7 +151,7 @@ function getTokensNum(height, width) {
  * @param {number} height - Image height
  * @returns {{rows: number, cols: number}} - Tile grid dimensions
  */
-function calculateTileGrid(width, height) {
+export function calculateTileGrid(width, height) {
   const { tileSize, minTiles, maxTiles } = CONFIG;
   const aspectRatio = width / height;
 
